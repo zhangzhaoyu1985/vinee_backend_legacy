@@ -1,0 +1,1 @@
+Files in this folder are backups for the server's /var/www/html folder.

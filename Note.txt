@@ -1,0 +1,120 @@
+===========================================
+Database Backup
+===========================================
+1. Connect to aws instance: 
+   ssh -i "liqing-02.pem" ubuntu@ec2-50-18-207-106.us-west-1.compute.amazonaws.com
+2. Dump db content to a local sql file:
+   sudo mysqldump -u root wineTage1 -p > wineTage1_dump_backup.sql
+3. Use FileZilla to download the sql content file into local.
+   https://filezilla-project.org/download.php?type=client 
+   http://angus.readthedocs.io/en/2014/amazon/transfer-files-between-instance.html
+
+===========================================
+Local Dev Environment Setup
+===========================================
+1. Install mysql in local.
+2. Run Xampp Apache web server and mysql database.
+3. Go to localhost/phpmyadmin to create db wineTage1, and import the wineTage1_dump_backup.sql dumped from the above Database Backup step.
+4. Run PhpServer.php and phpClient.php, make sure the username/host/password in db_utils.php can access db. Make sure /port matches the mysql config. 
+ 
+===========================================
+Backend Dev
+===========================================
+1. sudo ssh -i "liqing-02.pem" ubuntu@ec2-50-18-207-106.us-west-1.compute.amazonaws.com
+2. go to /home/ubuntu/yaoliu/thrift/tutorial/tagtalk_dev, and change codes there.
+3. If changed thrift definition, run:
+   thrift --gen php:server wineMateLogin.thrift
+5. git commit, git push 
+6. ps -aux, find PhpServer.php process, kill it, rerun the server:
+   nohup php PhpServer.php &
+
+===========================================
+Database
+===========================================
+*When a table's coding is not utf8 family, chinese won't display correctly.
+To solve the problem, just alter the table:
+ALTER TABLE user_account_info CONVERT TO CHARACTER SET utf8 COLLATE utf8_unicode_ci;
+
+===========================================
+Master Slave Setup 
+===========================================
+https://support.rackspace.com/how-to/set-up-mysql-master-slave-replication/
+
+* master - china server (54.223.152.54)
+* slave - us server (50.18.207.106)
+* need to use public ip (differernt from the article)
+* need to make sure all database are in sync, not only (wineTage1). 
+* use "show master status" on master to see the position
+* use "show slave status" on slave.
+	1) should match the position. 
+	2) Should have "Waiting for master to send event"
+	3) should not have any error msg
+* Once I saw phpmyadmin table not exist error in "show slave status", so I realized that I need to sync the database phpmyadmin as well.
+* master needs to grant replication privileges to slave, and all privileges to server that might access it. For now the servers that might access to master are just the master and slave server, so make sure both of them have all privileges.
+
+Steps
+1) On master, grant all privlege (including replication) to slave, and all servers that might access master:
+	# mysql -u root -p
+	mysql> GRANT ALL PRIVILEGES ON *.* TO 'root'@'50.18.207.106' identified by 'TagTalk78388!'; -----> do this for all servers (for now we only have this one)
+	mysql> flush privileges;
+	mysql> quit
+2) On master, in "/etc/mysql/my.cnf", add these at the end:
+	bind-address = 0.0.0.0
+	server-id = 1
+	log-bin = mysql-bin
+	binlog-ignore-db = "mysql"
+3) On master:
+	sudo /etc/init.d/mysql restart
+4) On master:
+	# mysql -u root -p
+	mysql> FLUSH TABLES WITH READ LOCK;
+	mysql> SHOW MASTER STATUS;
+	
+Will get something like:
++------------------+----------+--------------+------------------+
+| File             | Position | Binlog_Do_DB | Binlog_Ignore_DB |
++------------------+----------+--------------+------------------+
+| mysql-bin.000042 |  1747334 |              |                  |
++------------------+----------+--------------+------------------+
+
+5) On master:
+	mysqldump -u root -p --databases wineTage1 phpmyadmin > /home/ubuntu/yaoliu/db_dump_3_16.sql
+	
+	# mysql -u root -p
+	mysql> UNLOCK TABLES;
+
+	Now do not change anything on the master db. One you make a change the position will change.
+	Use fileZilla to copy the file db_dump_3_16.sql to your computer.
+6) On slave, in "/etc/mysql/my.cnf", add these at the end:
+	bind-address = 0.0.0.0
+	server-id = 2
+	master-host = '54.223.152.54'
+	master-user = root
+	master-password = TagTalk78388!
+	master-connect-retry = 60
+7) Use fileZilla to copy the file db_dump_3_16.sql to slave, let say /home/ubuntu/lingyao/db_3_16.sql.
+	mysql -u root -p < /home/ubuntu/lingyao/db_3_16.sql
+8) On slave:
+	# mysql -u root -p
+	mysql> SLAVE STOP;
+	
+	mysql> CHANGE MASTER TO MASTER_HOST='54.223.152.54',
+			MASTER_USER='root',
+			MASTER_PASSWORD='TagTalk78388!',
+			MASTER_LOG_FILE='mysql-bin.000042',
+			MASTER_LOG_POS=1747334;     <------------ Match the master position. You can do show master status on master to verify.
+			
+	mysql> START SLAVE;
+	
+9) On slave:
+	mysql> SHOW SLAVE STATUS;
+	
+	1) should match the position. 
+	2) Should have "Waiting for master to send event"
+	3) should not have any error msg
+
+===========================================
+Setup Sendemail for SMTP connection
+===========================================
+Install Sendemail by: sudo apt-get install sendmail
+With above installation, detect_failure_cron.py can use smtplib.SMPT('localhost') to send email. It connects to port 25 by default.

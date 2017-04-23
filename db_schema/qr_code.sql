@@ -1,0 +1,8 @@
+CREATE TABLE qr_code (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    code CHAR(100) NOT NULL,
+    is_used TINYINT NOT NULL DEFAULT 0,
+    time_created INT DEFAULT 0,
+    time_used INT DEFAULT 0,
+    UNIQUE KEY `qr_code` (`code`)
+) ENGINE=INNODB CHARSET=utf8;

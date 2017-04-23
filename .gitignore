@@ -1,0 +1,16 @@
+_Store
+.DS_Store
+.Note.txt.swp
+.gitignore.swp
+amazon-ses-smtp-sample.php
+composer.json
+composer.lock
+composer.phar
+go-pear.phar
+install_composer.bash
+log.txt
+nohup.out
+oneoff_scripts/
+sendMailTest.php
+vendor/
+wineMateLogin_github.thrift
